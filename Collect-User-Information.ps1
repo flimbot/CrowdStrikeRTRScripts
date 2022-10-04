@@ -1,4 +1,4 @@
-﻿#Run in CrowdStrike RTR with:
+#Run in CrowdStrike RTR with:
 # runscript -CloudFile=Collect-User-Information
 #   or
 # runscript -CloudFile=Collect-User-Information -CommandLine=```'{"Username": "40046051"}'```
@@ -21,8 +21,8 @@ else {
 #region modules/assemblies
 
 try {
-    if(-not (get-module mysqlite -ListAvailable)) {
-        Install-Module -name MySQLite -repository PSGallery -Force
+    if(-not (get-module PSSQLite -ListAvailable)) {
+        Install-Module -name PSSQLite -repository PSGallery -Force
     }
 } catch {}
 
@@ -143,12 +143,16 @@ if (Test-Path "C:\$Recycle.Bin") {
     Write-Verbose $destPrefix
 
     #https://pupuweb.com/solved-how-open-google-chrome-history-file/
-    Copy-Item "$browserFiles\History" -Destination "$path\$($destPrefix)History.sqlite"
-    if(Get-Command Invoke-MySQLiteQuery) {
-        #Query history
-    }
+    
+    #if(Get-Command Invoke-SqliteQuery) {
+        #Query history - not working yet
+        #Invoke-SqliteQuery -Query "select datetime(Last_visit_time / 1000000 + (strftime('%s', '1601-01-01')), 'unixepoch', 'localtime') LastVisitTime, * from urls limit 10" -Path '.\appdata\Local\Google\Chrome\User Data\Default\History'
+    #}
+    #else {
+        Copy-Item "$browserFiles\History" -Destination "$path\$($destPrefix)History.sqlite"
+        Get-Content "$browserFiles\History" | Select-String -Pattern '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' -AllMatches | ForEach-Object { ($_.Matches).Value } | Select -Unique | Add-Content -Path "$path\$($destPrefix)HistoryURL.txt"
+    #}
 
-    Get-Content "$browserFiles\History" | Select-String -Pattern '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' -AllMatches | ForEach-Object { ($_.Matches).Value } | Select -Unique | Add-Content -Path "$path\$($destPrefix)HistoryURL.txt"
 
     #this will fail on files in use
     Copy-Item "$browserFiles\Sessions" -Destination "$path\$($destPrefix)Sessions" -Recurse -Container -ErrorAction SilentlyContinue
@@ -161,7 +165,7 @@ if (Test-Path "C:\$Recycle.Bin") {
 if (Get-Process iexplore -ErrorAction SilentlyContinue) {
 
     Write-Verbose "Internet Explorer"
-
+    
     # Internet Explorer
     if(Test-Path "C:\Users\$Username\AppData\Local\Microsoft\Windows\INetCache") {
         Copy-Item "C:\Users\$Username\AppData\Local\Microsoft\Windows\INetCache" -Destination "$path\INetCache"
@@ -184,9 +188,9 @@ if ((Test-Path "C:\Program Files\Mozilla Firefox\")) {
     $browserFiles = (Get-ChildItem "C:\Users\$Username\AppData\Roaming\Mozilla\Firefox\Profiles" | Sort-Object LastWriteTime -Descending | Select -First 1).FullName
     Write-Verbose "Firefox"
     
-    if(Get-Command Invoke-MySQLiteQuery) {
+    if(Get-Command Invoke-SqliteQuery) {
         #Query history
-        Invoke-MySQLiteQuery -Path "$browserFiles\places.sqlite" -Query "SELECT last_visit_date,title,url from moz_places" | Select @{N="last_visit_date_readable";E={(Get-Date -Date '1970-01-01 00:00:00').AddMilliseconds($_.last_visit_date/1000)}},* | Export-Csv -Path "$path\firefoxHistory.csv" -NoTypeInformation
+        Invoke-SqliteQuery -Query "SELECT last_visit_date,title,url from moz_places" -Path "$browserFiles\places.sqlite" | Select @{N="last_visit_date_readable";E={(Get-Date -Date '1970-01-01 00:00:00').AddMilliseconds($_.last_visit_date/1000)}},* | Export-Csv -Path "$path\firefoxHistory.csv" -NoTypeInformation
     }
     else {
         Copy-Item "$browserFiles\places.sqlite" -Destination "$path\firefoxHistory.sqlite"
