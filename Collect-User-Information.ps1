@@ -22,6 +22,7 @@ else {
 
 try {
     if(-not (get-module PSSQLite -ListAvailable)) {
+        #https://github.com/RamblingCookieMonster/PSSQLite
         Install-Module -name PSSQLite -repository PSGallery -Force
     }
 } catch {}
@@ -133,6 +134,14 @@ if (Test-Path "C:\$Recycle.Bin") {
 
 #endregion
 
+#region collect download items from the last month
+
+if (Test-Path "C:\Users\$Username\Downloads\") {
+    Get-ChildItem -Path "C:\Users\$Username\Downloads\" -Force -Recurse -ErrorAction SilentlyContinue | ?{$_.Directory -and $_.LastWriteTime -gt (Get-Date).AddMonths(-1)}| Select @{N='SHA256';E={(Get-FileHash -Path $_.FullName).Hash}},LastWriteTime,FullName | Export-csv "$path\downloadFiles.csv" -NoTypeInformation
+}
+
+#endregion
+
 #region collect browser data - Chrome/Edge
 
 # This could be expanded to cover all chromium browsers.. maybe by testing for a file or file we expect in the structure.
@@ -144,15 +153,22 @@ if (Test-Path "C:\$Recycle.Bin") {
 
     #https://pupuweb.com/solved-how-open-google-chrome-history-file/
     
-    #if(Get-Command Invoke-SqliteQuery) {
+    if(Get-Command Invoke-SqliteQuery) {
         #Query history - not working yet
-        #Invoke-SqliteQuery -Query "select datetime(Last_visit_time / 1000000 + (strftime('%s', '1601-01-01')), 'unixepoch', 'localtime') LastVisitTime, * from urls limit 10" -Path '.\appdata\Local\Google\Chrome\User Data\Default\History'
-    #}
-    #else {
-        Copy-Item "$browserFiles\History" -Destination "$path\$($destPrefix)History.sqlite"
-        Get-Content "$browserFiles\History" | Select-String -Pattern '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' -AllMatches | ForEach-Object { ($_.Matches).Value } | Select -Unique | Add-Content -Path "$path\$($destPrefix)HistoryURL.txt"
-    #}
+        # output tables: Invoke-SqliteQuery -Query "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY 1;" -Path '\path\to\sqlite' -QueryTimeout 100
 
+        #Downloads
+        Invoke-SqliteQuery -Query "SELECT datetime(end_time/1000000-11644473600,'unixepoch','localtime'),current_path,referrer,mime_type,total_bytes FROM downloads" -Path "$browserFiles\History" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)History.csv" -NoTypeInformation
+
+        #History
+        Invoke-SqliteQuery -Query "SELECT datetime(last_visit_time/1000000-11644473600,'unixepoch','localtime'),title,url FROM urls" -Path "$browserFiles\History" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)Downloads.csv" -NoTypeInformation
+
+    }
+    else {
+        Copy-Item "$browserFiles\History" -Destination "$path\$($destPrefix)History.sqlite"
+    }
+
+    Get-Content "$browserFiles\History" | Select-String -Pattern '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' -AllMatches | ForEach-Object { ($_.Matches).Value } | Select -Unique | Add-Content -Path "$path\$($destPrefix)HistoryURL.txt"
 
     #this will fail on files in use
     Copy-Item "$browserFiles\Sessions" -Destination "$path\$($destPrefix)Sessions" -Recurse -Container -ErrorAction SilentlyContinue
@@ -163,9 +179,6 @@ if (Test-Path "C:\$Recycle.Bin") {
 #region collect browser data - internet explorer
 
 if (Get-Process iexplore -ErrorAction SilentlyContinue) {
-
-    Write-Verbose "Internet Explorer"
-    
     # Internet Explorer
     if(Test-Path "C:\Users\$Username\AppData\Local\Microsoft\Windows\INetCache") {
         Copy-Item "C:\Users\$Username\AppData\Local\Microsoft\Windows\INetCache" -Destination "$path\INetCache"
@@ -175,7 +188,6 @@ if (Get-Process iexplore -ErrorAction SilentlyContinue) {
 
     # Borrow from: https://github.com/freeload101/CrowdStrike_RTR_Powershell_Scripts/blob/main/Get-BrowserData.ps1
     #better yet.. https://gist.github.com/PolarBearGod/8e6990948c78792148db83c022310284
-
 }
 
 #endregion
@@ -189,12 +201,12 @@ if ((Test-Path "C:\Program Files\Mozilla Firefox\")) {
     Write-Verbose "Firefox"
     
     if(Get-Command Invoke-SqliteQuery) {
-        #Query history
-        Invoke-SqliteQuery -Query "SELECT last_visit_date,title,url from moz_places" -Path "$browserFiles\places.sqlite" | Select @{N="last_visit_date_readable";E={(Get-Date -Date '1970-01-01 00:00:00').AddMilliseconds($_.last_visit_date/1000)}},* | Export-Csv -Path "$path\firefoxHistory.csv" -NoTypeInformation
+        Invoke-SqliteQuery -Query "SELECT datetime(last_visit_date/1000000-11644473600,'unixepoch','localtime'),title,url from moz_places" -Path "$browserFiles\places.sqlite" | Export-Csv -Path "$path\firefoxHistory.csv" -NoTypeInformation
     }
     else {
         Copy-Item "$browserFiles\places.sqlite" -Destination "$path\firefoxHistory.sqlite"
     }
+    Get-Content "$browserFiles\places.sqlite" | Select-String -Pattern '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' -AllMatches | ForEach-Object { ($_.Matches).Value } | Select -Unique | Add-Content -Path "$path\$($destPrefix)PlacesUrl.txt"
 }
 
 #endregion
