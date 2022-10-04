@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "properties": {
+    "Path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "Path"
+  ],
+  "type": "object",
+  "description": "This generated schema may need tweaking. In particular format fields are attempts at matching workflow field types but may not be correct."
+}

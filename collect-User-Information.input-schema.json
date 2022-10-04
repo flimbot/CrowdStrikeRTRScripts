@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "properties": {
+    "Username": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "type": "object",
+  "description": "This is to define the input of a username, however the variable cannot be passed in with CrowdStrike Fusion (yet?)"
+}
