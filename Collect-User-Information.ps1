@@ -20,29 +20,32 @@ else {
 
 #region modules/assemblies
 
-try {
-    if(-not (get-module PSSQLite -ListAvailable)) {
-        #https://github.com/RamblingCookieMonster/PSSQLite
-        Install-Module -name PSSQLite -repository PSGallery -Force
-    }
-} catch {}
+if(-not (get-module PSSQLite -ListAvailable)) {
+   #https://github.com/RamblingCookieMonster/PSSQLite
+   Install-Module -name PSSQLite -repository PSGallery -Force -Scope AllUsers
+}
 
 #endregion
 
 #region set output path
 # This is largely driven from whether CrowdStrike Fusion (Workflow) can use an output parameter to "get" the file or it requires an arbitrary path
+# Also the scriptblock used to get the screenshots may need a static path.
+# Not having a dynamic path may mean that we cannot collect information periodically over time and later access it on the device.
 
 # Use dynamic path
-$path = "$env:temp\Collection-$((Get-Date).ToFileTime())"
+#$path = "$env:temp\Collection-$((Get-Date).ToFileTime())"
 
-# Use static path
-#$path = "C:\windows\TEMP\Collect-User-Information"
+# Use static path - Also m
+$path = "C:\windows\TEMP\Collect-User-Information"
 
 # Remove old files and create new folder
 if(Test-Path $path){
     Remove-Item $path -Recurse
+}
+if(Test-Path "$path.zip"){
     Remove-Item "$path.zip"
 }
+
 New-Item $path -ItemType Directory | Out-Null
 Write-Verbose "Saving to: $path"
 
@@ -86,7 +89,7 @@ $encodedCommand = [Convert]::ToBase64String($commandBytes)
 $taskAction = New-ScheduledTaskAction -Execute 'PowerShell.exe' -Argument "-EncodedCommand $encodedCommand"
 $taskRegist = Register-ScheduledTask -TaskName 'RTR Screenshot' -Description 'Take screenshot for Real Time Response data collection' -Action $taskAction -User $Username -Settings (New-ScheduledTaskSettingsSet -Hidden:$true)
 $taskStart  = Start-ScheduledTask -TaskPath $taskRegist.TaskPath -TaskName $taskRegist.TaskName
-Sleep -Seconds 1
+Sleep -Seconds 2
 while($taskRegist.State -ne 'Ready') {
     Sleep -Milliseconds 100
 }
@@ -158,11 +161,13 @@ if (Test-Path "C:\Users\$Username\Downloads\") {
         # output tables: Invoke-SqliteQuery -Query "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY 1;" -Path '\path\to\sqlite' -QueryTimeout 100
 
         #Downloads
-        Invoke-SqliteQuery -Query "SELECT datetime(end_time/1000000-11644473600,'unixepoch','localtime'),current_path,referrer,mime_type,total_bytes FROM downloads" -Path "$browserFiles\History" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)History.csv" -NoTypeInformation
+        # Work around for locked database (hopefully)
+        Copy-Item -Path "$browserFiles\History" -Destination "$browserFiles\History-copy"
+        Invoke-SqliteQuery -Query "SELECT datetime(end_time/1000000-11644473600,'unixepoch','localtime'),current_path,referrer,mime_type,total_bytes FROM downloads" -Path "$browserFiles\History-copy" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)Downloads.csv" -NoTypeInformation
 
         #History
-        Invoke-SqliteQuery -Query "SELECT datetime(last_visit_time/1000000-11644473600,'unixepoch','localtime'),title,url FROM urls" -Path "$browserFiles\History" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)Downloads.csv" -NoTypeInformation
-
+        Invoke-SqliteQuery -Query "SELECT datetime(last_visit_time/1000000-11644473600,'unixepoch','localtime'),title,url FROM urls" -Path "$browserFiles\History-copy" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)History.csv" -NoTypeInformation
+        Remove-Item -Path "$browserFiles\History-copy"
     }
     else {
         Copy-Item "$browserFiles\History" -Destination "$path\$($destPrefix)History.sqlite"
@@ -170,8 +175,8 @@ if (Test-Path "C:\Users\$Username\Downloads\") {
 
     Get-Content "$browserFiles\History" | Select-String -Pattern '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' -AllMatches | ForEach-Object { ($_.Matches).Value } | Select -Unique | Add-Content -Path "$path\$($destPrefix)HistoryURL.txt"
 
-    #this will fail on files in use
-    Copy-Item "$browserFiles\Sessions" -Destination "$path\$($destPrefix)Sessions" -Recurse -Container -ErrorAction SilentlyContinue
+    # This will fail on files in use, not sure if required
+    #Copy-Item "$browserFiles\Sessions" -Destination "$path\$($destPrefix)Sessions" -Recurse -Container -ErrorAction SilentlyContinue
 }
 
 #endregion
@@ -201,7 +206,9 @@ if ((Test-Path "C:\Program Files\Mozilla Firefox\")) {
     Write-Verbose "Firefox"
     
     if(Get-Command Invoke-SqliteQuery) {
-        Invoke-SqliteQuery -Query "SELECT datetime(last_visit_date/1000000-11644473600,'unixepoch','localtime'),title,url from moz_places" -Path "$browserFiles\places.sqlite" | Export-Csv -Path "$path\firefoxHistory.csv" -NoTypeInformation
+        Copy-Item -Path "$browserFiles\places.sqlite" -Destination "$browserFiles\places.sqlite-copy"
+        Invoke-SqliteQuery -Query "SELECT datetime(last_visit_date/1000000-11644473600,'unixepoch','localtime'),title,url from moz_places" -Path "$browserFiles\places.sqlite-copy" | Export-Csv -Path "$path\firefoxHistory.csv" -NoTypeInformation
+        Remove-Item -Path "$browserFiles\places.sqlite-copy"
     }
     else {
         Copy-Item "$browserFiles\places.sqlite" -Destination "$path\firefoxHistory.sqlite"
@@ -211,9 +218,9 @@ if ((Test-Path "C:\Program Files\Mozilla Firefox\")) {
 
 #endregion
 
-#region collect windows events for last 6 hours
+#region collect windows events for last hour
 
-Get-EventLog -LogName * -ErrorAction SilentlyContinue -After (Get-Date).AddHours(-6) | Select -ExpandProperty Entries | Export-csv "$path\windowsEvents.csv" -NoTypeInformation 
+Get-EventLog -LogName * -ErrorAction SilentlyContinue -After (Get-Date).AddHours(-1) | Select -ExpandProperty Entries | Export-csv "$path\windowsEvents.csv" -NoTypeInformation 
 
 #endregion
 
