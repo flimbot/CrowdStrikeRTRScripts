@@ -145,38 +145,34 @@ if (Test-Path "C:\Users\$Username\Downloads\") {
 
 #endregion
 
-#region collect browser data - Chrome/Edge
+#region collect browser data - Chromium browsers like Chrome or Edge
 
-# This could be expanded to cover all chromium browsers.. maybe by testing for a file or file we expect in the structure.
-@('Google\Chrome','Microsoft\Edge') | Where-Object { Test-Path "C:\Users\$Username\AppData\Local\$_\User Data\Default" } | ForEach-Object {
-    $browserFiles = "C:\Users\$Username\AppData\Local\$_\User Data\Default"
-    $destPrefix = $_ -replace "\\",""
+#Identify chromium browser paths, extended to support multiple profiles as long as there is a history file which is SQLite
+$chromiumBrowserPaths = (Get-ChildItem "C:\Users\$Username\AppData\Local\*\*\User Data\*\" | Where-Object { (Test-Path "$_\History") -and [char[]](Get-Content "$($_.FullName)\History" -Encoding byte -TotalCount 'SQLite format'.Length) -join ''}).FullName
 
-    Write-Verbose $destPrefix
+$chromiumBrowserPaths | ForEach-Object {
+    $destPrefix = ($_ | Where-Object { $_ -match "([^\\]+\\[^\\]+)\\User Data\\(.+)\\" } | ForEach-Object { $matches[1] + $matches[2] }) -replace "\\|\s",""
 
     #https://pupuweb.com/solved-how-open-google-chrome-history-file/
     
     if(Get-Command Invoke-SqliteQuery) {
-        #Query history - not working yet
-        # output tables: Invoke-SqliteQuery -Query "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY 1;" -Path '\path\to\sqlite' -QueryTimeout 100
-
+        #Query history
+        
         #Downloads
         # Work around for locked database (hopefully)
-        Copy-Item -Path "$browserFiles\History" -Destination "$browserFiles\History-copy"
-        Invoke-SqliteQuery -Query "SELECT datetime(end_time/1000000-11644473600,'unixepoch','localtime'),current_path,referrer,mime_type,total_bytes FROM downloads" -Path "$browserFiles\History-copy" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)Downloads.csv" -NoTypeInformation
+        Copy-Item -Path "$_\History" -Destination "$_\History-copy"
+        Invoke-SqliteQuery -Query "SELECT datetime(end_time/1000000-11644473600,'unixepoch','localtime'),current_path,referrer,mime_type,total_bytes FROM downloads" -Path "$_\History-copy" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)Downloads.csv" -NoTypeInformation
 
         #History
-        Invoke-SqliteQuery -Query "SELECT datetime(last_visit_time/1000000-11644473600,'unixepoch','localtime'),title,url FROM urls" -Path "$browserFiles\History-copy" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)History.csv" -NoTypeInformation
-        Remove-Item -Path "$browserFiles\History-copy"
+        Invoke-SqliteQuery -Query "SELECT datetime(last_visit_time/1000000-11644473600,'unixepoch','localtime'),title,url FROM urls" -Path "$_\History-copy" -QueryTimeout 100 | Export-Csv -Path "$path\$($destPrefix)History.csv" -NoTypeInformation
+        Remove-Item -Path "$_\History-copy"
     }
     else {
-        Copy-Item "$browserFiles\History" -Destination "$path\$($destPrefix)History.sqlite"
+        Copy-Item "$_\History" -Destination "$path\$($destPrefix)History.sqlite"
     }
 
-    Get-Content "$browserFiles\History" | Select-String -Pattern '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' -AllMatches | ForEach-Object { ($_.Matches).Value } | Select -Unique | Add-Content -Path "$path\$($destPrefix)HistoryURL.txt"
-
-    # This will fail on files in use, not sure if required
-    #Copy-Item "$browserFiles\Sessions" -Destination "$path\$($destPrefix)Sessions" -Recurse -Container -ErrorAction SilentlyContinue
+    #Fallback in case queries don't work as expected
+    Get-Content "$_\History" | Select-String -Pattern '(htt(p|s))://([\w-]+\.)+[\w-]+(/[\w- ./?%&=]*)*?' -AllMatches | ForEach-Object { ($_.Matches).Value } | Select -Unique | Add-Content -Path "$path\$($destPrefix)HistoryURL.txt"
 }
 
 #endregion
