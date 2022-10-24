@@ -1,7 +1,7 @@
-#Run in CrowdStrike RTR with:
+﻿#Run in CrowdStrike RTR with:
 # runscript -CloudFile=Collect-User-Information
 #   or
-# runscript -CloudFile=Collect-User-Information -CommandLine=```'{"Username": "40046051"}'```
+# runscript -CloudFile=Collect-User-Information -CommandLine=```'{"Username": "USERNAMEHERE"}'```
 
 # I dislike this, but limited alternatives
 $sessions = (((query user /server:$env:COMPUTERNAME) -replace '^>', '') -replace '\s{2,}', ',' | ConvertFrom-Csv)
@@ -86,7 +86,7 @@ $commandBytes = [System.Text.Encoding]::Unicode.GetBytes($taskScriptBlock)
 $encodedCommand = [Convert]::ToBase64String($commandBytes)
 
 # Use task scheduler to execute as user: https://stackoverflow.com/questions/71328838/how-do-i-run-a-remote-command-in-a-specific-session-on-a-remote-computer
-$taskAction = New-ScheduledTaskAction -Execute 'PowerShell.exe' -Argument "-EncodedCommand $encodedCommand"
+$taskAction = New-ScheduledTaskAction -Execute 'PowerShell.exe' -Argument "-NoLogo -WindowStyle Hidden -EncodedCommand $encodedCommand"
 $taskRegist = Register-ScheduledTask -TaskName 'RTR Screenshot' -Description 'Take screenshot for Real Time Response data collection' -Action $taskAction -User $Username -Settings (New-ScheduledTaskSettingsSet -Hidden:$true)
 $taskStart  = Start-ScheduledTask -TaskPath $taskRegist.TaskPath -TaskName $taskRegist.TaskName
 Sleep -Seconds 2

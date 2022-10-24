@@ -1,0 +1,11 @@
+﻿{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "properties": {
+    "message": {
+      "type": "string"
+    }
+  },
+  "required": [],
+  "type": "object",
+  "description": "Pass message to user to display on host"
+}
